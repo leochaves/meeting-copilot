@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Copiloto de Reuniões</title>
+  <link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+  <aside class="nav">
+    <div class="marca"><span class="logo"></span>Copiloto</div>
+    <button data-tela="aovivo" class="ativo"><span>🎙️</span>Ao vivo</button>
+    <button data-tela="reunioes"><span>🗂️</span>Reuniões</button>
+    <button data-tela="recursos"><span>📊</span>Recursos</button>
+    <button data-tela="ajustes"><span>⚙️</span>Ajustes</button>
+    <div class="nav-rodape">
+      <div id="nav-vram" class="mini-medidor" title="Memória da placa de vídeo ocupada (não é uso de processamento)">
+        <span>Memória</span><div class="trilho"><i></i></div><b></b>
+      </div>
+      <div id="nav-uso" class="mini-medidor" title="Quanto a placa de vídeo está processando agora (todos os programas)">
+        <span>Uso GPU</span><div class="trilho"><i></i></div><b></b>
+      </div>
+      <div id="nav-conexao" class="conexao">conectando…</div>
+    </div>
+  </aside>
+
+  <main>
+    <!-- AO VIVO ------------------------------------------------------------>
+    <section id="tela-aovivo" class="tela ativa">
+      <header class="topo">
+        <input id="titulo" class="titulo-input" placeholder="Título da reunião (opcional)" maxlength="120">
+        <span id="pill" class="pill">Parado</span>
+        <span id="relogio" class="relogio">00:00</span>
+        <div class="acoes">
+          <button id="btn-iniciar" class="btn primario">▶ Iniciar</button>
+          <button id="btn-pausar" class="btn" hidden>⏸ Pausar</button>
+          <button id="btn-retomar" class="btn primario" hidden>▶ Retomar</button>
+          <button id="btn-encerrar" class="btn perigo" hidden>⏹ Encerrar</button>
+        </div>
+      </header>
+
+      <div class="subtopo">
+        <div class="medidor"><span>Você</span><div class="trilho"><i id="nivel-mic"></i></div></div>
+        <div class="medidor"><span>Outros</span><div class="trilho"><i id="nivel-sis"></i></div></div>
+        <label class="campo-inline">Explicar
+          <select id="intervalo">
+            <option value="30">a cada 30 s</option>
+            <option value="60">a cada 1 min</option>
+            <option value="120">a cada 2 min</option>
+            <option value="300">a cada 5 min</option>
+            <option value="0">só quando eu pedir</option>
+          </select>
+        </label>
+        <span id="detalhe" class="detalhe"></span>
+      </div>
+
+      <div class="colunas">
+        <section class="painel">
+          <h2>Transcrição</h2>
+          <div id="falas" class="rolagem">
+            <p class="vazio">Clique em <b>Iniciar</b> e a transcrição aparece aqui.<br>
+              O que você fala aparece como “Você”; o áudio do PC, como “Outros”.</p>
+          </div>
+        </section>
+        <section class="painel">
+          <h2>Copiloto <button id="btn-explicar" class="btn pequeno" disabled>Explicar agora</button></h2>
+          <div id="cartoes" class="rolagem">
+            <p class="vazio">As explicações e sugestões aparecem aqui, a mais recente no topo.</p>
+          </div>
+          <form id="form-pergunta" class="pergunta">
+            <input id="pergunta" placeholder="Pergunte algo sobre a reunião…" autocomplete="off" disabled>
+            <button class="btn primario" disabled>Enviar</button>
+          </form>
+        </section>
+      </div>
+    </section>
+
+    <!-- REUNIÕES ----------------------------------------------------------->
+    <section id="tela-reunioes" class="tela">
+      <div id="reunioes-lista">
+        <header class="topo">
+          <h1>Reuniões</h1>
+          <input id="busca" type="search" class="busca" placeholder="Buscar em títulos, atas e falas…">
+          <button id="btn-pasta" class="btn">📁 Exportações</button>
+        </header>
+        <div id="lista" class="lista"></div>
+      </div>
+      <div id="reuniao-detalhe" hidden></div>
+    </section>
+
+    <!-- RECURSOS ----------------------------------------------------------->
+    <section id="tela-recursos" class="tela">
+      <header class="topo"><h1>Recursos</h1><span class="detalhe">atualiza a cada 2 s</span></header>
+      <div id="recursos" class="grade"></div>
+    </section>
+
+    <!-- AJUSTES ------------------------------------------------------------>
+    <section id="tela-ajustes" class="tela">
+      <header class="topo">
+        <h1>Ajustes</h1>
+        <span class="detalhe">Valem a partir da próxima reunião.</span>
+        <div class="acoes"><button id="btn-salvar" class="btn primario">Salvar</button></div>
+      </header>
+      <form id="form-ajustes" class="ajustes"></form>
+    </section>
+  </main>
+
+  <div id="toasts"></div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,122 @@
+"""Conversa com o Claude: cada trecho da reunião vira uma mensagem nova.
+
+O histórico só cresce (append-only), então o prompt caching reaproveita tudo
+que já foi enviado e cada chamada paga só pelo trecho novo.
+"""
+
+import anthropic
+
+SISTEMA = """Você é um copiloto de reuniões ao vivo. Recebe trechos da \
+transcrição automática de uma reunião (pode ter erros de reconhecimento — \
+interprete pelo contexto) e ajuda o usuário, identificado como "Você", a \
+acompanhar e participar.
+
+A cada trecho, responda em português do Brasil, curto, pra ser lido de relance \
+durante a reunião, neste formato:
+
+📌 Agora: 1–2 frases sobre o que está sendo discutido.
+🧭 Contexto: termos, siglas, subtexto ou ligação com o que veio antes — só se \
+ajudar a entender.
+💡 Sugestões: 1–3 itens do que o usuário poderia dizer, perguntar ou observar.
+⚠️ Atenção: decisões, prazos ou tarefas atribuídas ao usuário — só se houver.
+
+Omita seções vazias. Se o trecho for irrelevante (conversa paralela, silêncio, \
+ruído), diga isso em uma linha.
+
+Quando o usuário fizer uma pergunta direta, responda a pergunta usando tudo o \
+que foi dito na reunião até ali, sem o formato acima."""
+
+SISTEMA_ATA = """Você recebe a transcrição automática de uma reunião (pode ter \
+erros de reconhecimento — interprete pelo contexto; "Você" é o usuário). \
+Escreva a ata em Markdown, em português do Brasil.
+
+A primeira linha deve ser exatamente `Título: <título curto, até 8 palavras>`. \
+Depois, use estas seções (omita as vazias):
+
+## Resumo
+3–5 frases.
+## Decisões
+## Tarefas
+Quem, o quê e prazo, quando tiver sido dito.
+## Pendências
+Dúvidas e assuntos sem conclusão.
+## Próximos passos
+
+Seja fiel ao que foi dito; não invente nomes, números ou prazos."""
+
+MODELO_PADRAO = "claude-opus-5-5"
+
+# US$ por milhão de tokens: (entrada, saída, leitura de cache).
+# Escrita de cache custa 1,25× a entrada.
+PRECOS = {
+    "claude-fable-5-1": (10.0, 50.0, 0.25),
+    "claude-opus-5-5": (4.0, 20.0, 0.20),
+    "claude-sonnet-5-5": (2.0, 10.0, 0.20),
+    "claude-haiku-5-5": (0.10, 0.50, 0.01),
+}
+
+
+def _custo(modelo: str, uso) -> float:
+    entrada, saida, cache = PRECOS.get(modelo, PRECOS[MODELO_PADRAO])
+    escrita = getattr(uso, "cache_creation_input_tokens", 0) or 0
+    leitura = getattr(uso, "cache_read_input_tokens", 0) or 0
+    return (
+        uso.input_tokens * entrada
+        + escrita * entrada * 1.25
+        + leitura * cache
+        + uso.output_tokens * saida
+    ) / 1e6
+
+
+class Cerebro:
+    def __init__(self, modelo: str = MODELO_PADRAO, esforco: str = "low",
+                 api_key: str | None = None):
+        self.client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
+        self.modelo = modelo
+        self.esforco = esforco
+        self.mensagens: list[dict] = []
+
+    def _stream(self, ao_escrever, **kwargs):
+        kwargs.update(model=self.modelo, max_tokens=8000, output_config={"effort": self.esforco})
+        # Haiku não tem fallback server-side; nos demais, se o classificador
+        # recusar, o próprio servidor refaz com o modelo recomendado.
+        if "haiku" not in self.modelo:
+            kwargs["betas"] = ["server-side-fallback-2026-07-01"]
+            kwargs["extra_body"] = {"fallbacks": "default"}
+        with self.client.beta.messages.stream(**kwargs) as stream:
+            for texto in stream.text_stream:
+                ao_escrever(texto)
+            return stream.get_final_message()
+
+    def enviar(self, conteudo: str, ao_escrever) -> tuple[str, float]:
+        """Manda `conteudo` como nova mensagem; devolve (texto, custo em US$)."""
+        self.mensagens.append({"role": "user", "content": conteudo})
+        try:
+            final = self._stream(
+                ao_escrever,
+                system=SISTEMA,
+                messages=self.mensagens,
+                cache_control={"type": "ephemeral"},
+            )
+        except Exception:
+            self.mensagens.pop()
+            raise
+
+        custo = _custo(self.modelo, final.usage)
+        if final.stop_reason == "refusal":
+            self.mensagens.pop()
+            return "[o modelo recusou esse trecho]", custo
+
+        # Devolve o content inteiro (inclui blocos de thinking) — exigido pra
+        # continuar a conversa no mesmo modelo.
+        self.mensagens.append({"role": "assistant", "content": final.content})
+        return "".join(b.text for b in final.content if b.type == "text"), custo
+
+    def gerar_ata(self, transcricao: str, _explicacoes: str, ao_escrever) -> tuple[str, float]:
+        final = self._stream(
+            ao_escrever,
+            system=SISTEMA_ATA,
+            messages=[{"role": "user", "content": f"Transcrição:\n\n{transcricao}"}],
+        )
+        texto = "".join(b.text for b in final.content if b.type == "text")
+        return texto, _custo(self.modelo, final.usage)

@@ -1,0 +1,3 @@
+# Só pra quem tem placa NVIDIA: bibliotecas CUDA pro Whisper rodar na GPU (~1 GB).
+nvidia-cublas-cu12
+nvidia-cudnn-cu12==9.*
