@@ -46,7 +46,9 @@ fi
 instalar_pacotes() {
     case "$PM" in
         apt) $SUDO apt-get update -qq && $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends $1 ;;
-        dnf) $SUDO dnf install -y -q $2 ;;
+        # strict=False: pula pacotes que não existem nessa versão (ex.: RHEL/Oracle 8)
+        # em vez de cancelar a instalação inteira
+        dnf) $SUDO dnf install -y -q --setopt=strict=False $2 ;;
         pacman) $SUDO pacman -S --needed --noconfirm $3 ;;
         *) aviso "Gerenciador de pacotes não reconhecido; instale manualmente o equivalente a: $1"; return 0 ;;
     esac
@@ -64,26 +66,51 @@ passo "Verificando o sistema"
 livre=$(df -BG --output=avail "$RAIZ" | tail -1 | tr -dc '0-9')
 if [ "${livre:-0}" -lt 10 ]; then aviso "Só ${livre} GB livres; a instalação completa usa ~10 GB."; else ok "${livre} GB livres"; fi
 [ -n "$PM" ] && ok "gerenciador de pacotes: $PM"
+[ -r /etc/os-release ] && ok "$(. /etc/os-release && echo "$PRETTY_NAME")"
+# O app precisa rodar na máquina onde a reunião toca: com tela e som
+if [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+    aviso "Nenhuma tela gráfica detectada (sessão por SSH?). O app precisa rodar no computador onde a reunião toca."
+fi
+if command -v pactl >/dev/null 2>&1 && ! pactl info >/dev/null 2>&1; then
+    aviso "Servidor de som (PulseAudio/PipeWire) não respondeu: sem ele não dá pra capturar o áudio."
+fi
 
 # --- 2. Pacotes do sistema --------------------------------------------------------
 passo "Pacotes do sistema (pode pedir sua senha pro sudo)"
 instalar_pacotes \
     "python3 python3-venv python3-pip libpulse0 pulseaudio-utils curl xdg-utils libnss3 libxkbcommon-x11-0 libegl1 libgl1 libxcomposite1 libxdamage1 libxrandr2 libxtst6 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-randr0 fonts-noto-color-emoji" \
-    "python3 python3-pip pulseaudio-libs pulseaudio-utils curl xdg-utils nss libxkbcommon-x11 mesa-libEGL mesa-libGL xcb-util-cursor xcb-util-wm xcb-util-keysyms xcb-util-image xcb-util-renderutil google-noto-emoji-color-fonts" \
+    "pulseaudio-libs pulseaudio-utils curl xdg-utils nss libxkbcommon-x11 mesa-libEGL mesa-libGL xcb-util-cursor xcb-util-wm xcb-util-keysyms xcb-util-image xcb-util-renderutil google-noto-emoji-color-fonts" \
     "python python-pip libpulse curl xdg-utils nss libxkbcommon-x11 mesa xcb-util-cursor xcb-util-wm xcb-util-keysyms xcb-util-image xcb-util-renderutil noto-fonts-emoji"
 ok "pacotes do sistema"
 
 # --- 3. Python --------------------------------------------------------------------
 passo "Python 3.10 a 3.13"
+# Distribuições antigas (RHEL/Oracle 8, Ubuntu 20.04) têm python3 = 3.6/3.8,
+# mas oferecem versões novas com nome próprio (python3.12 etc.)
+achar_python() {
+    for p in python3.12 python3.11 python3.13 python3.10 python3; do
+        command -v "$p" >/dev/null 2>&1 || continue
+        menor=$("$p" -c 'import sys; print(sys.version_info[1] if sys.version_info[0] == 3 else 0)' 2>/dev/null) || continue
+        if [ "$menor" -ge 10 ] && [ "$menor" -le 13 ]; then echo "$p"; return 0; fi
+    done
+    return 1
+}
 if [ -x "$PY" ]; then
     ok "ambiente já existe (.venv)"
 else
-    versao=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
-    menor=${versao#3.}
-    [ "$menor" -ge 10 ] || falha "Python $versao é antigo demais; precisa de 3.10 ou mais novo."
-    [ "$menor" -le 13 ] || aviso "Python $versao ainda não foi testado (testado até 3.13)."
-    ok "usando python3 ($versao)"
-    python3 -m venv .venv || falha "Não consegui criar o ambiente (.venv). Instale o pacote python3-venv."
+    python=$(achar_python || true)
+    if [ -z "$python" ]; then
+        aviso "Nenhum Python 3.10+ encontrado ($(python3 --version 2>&1)); instalando o 3.12..."
+        case "$PM" in
+            apt) instalar_pacotes "python3.12 python3.12-venv" "" "" ;;
+            dnf) $SUDO dnf install -y -q python3.12 python3.12-pip ;;
+            pacman) instalar_pacotes "" "" "python" ;;
+        esac
+        python=$(achar_python || true)
+        [ -n "$python" ] || falha "Não consegui instalar um Python 3.10+. Instale o python3.12 pelo gerenciador de pacotes e rode de novo."
+    fi
+    ok "usando $python ($("$python" --version 2>&1))"
+    "$python" -m venv .venv || falha "Não consegui criar o ambiente (.venv). Instale o pacote venv do $python."
 fi
 
 # --- 4. Bibliotecas ----------------------------------------------------------------
@@ -91,6 +118,12 @@ passo "Bibliotecas do app (alguns minutos na 1ª vez)"
 "$PY" -m pip install --upgrade pip --quiet --disable-pip-version-check
 "$PY" -m pip install -r requirements.txt --quiet --disable-pip-version-check || falha "Falha ao instalar requirements.txt."
 ok "bibliotecas instaladas"
+# Janela própria (Qt): opcional — sem ela o app abre no navegador
+if "$PY" -m pip install "pywebview[qt]>=5.0" --quiet --disable-pip-version-check; then
+    ok "janela própria (Qt)"
+else
+    aviso "Não deu pra instalar a janela Qt nesta distribuição; o app vai abrir no navegador."
+fi
 
 nvidia=""
 if command -v nvidia-smi >/dev/null 2>&1; then
