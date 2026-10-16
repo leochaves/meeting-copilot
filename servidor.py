@@ -325,7 +325,10 @@ def apagar_chave(chave: str):
 
 @app.get("/api/dispositivos")
 def dispositivos():
-    return listar_dispositivos()
+    try:
+        return listar_dispositivos()
+    except RuntimeError as e:  # sem servidor de som (Linux)
+        raise HTTPException(503, str(e))
 
 
 @app.get("/api/ollama/modelos")

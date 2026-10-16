@@ -7,12 +7,24 @@ PipeWire através do pipewire-pulse (padrão no Ubuntu 22.10+, Fedora etc.).
 
 import threading
 
-import soundcard as sc
-
 from audio_base import AMOSTRAS_BLOCO, TAXA, CapturadorBase
 
 
+def _soundcard():
+    """Importa sob demanda: o soundcard se conecta ao PulseAudio já no import,
+    e sem servidor de som o app inteiro deixaria de abrir."""
+    try:
+        import soundcard
+    except Exception as e:
+        raise RuntimeError(
+            "Não consegui falar com o servidor de som (PulseAudio/PipeWire). "
+            f"Ele está rodando nesta sessão? Detalhe: {type(e).__name__} {e}"
+        ) from e
+    return soundcard
+
+
 def listar_dispositivos() -> dict:
+    sc = _soundcard()
     mics, saidas = [], []
     for m in sc.all_microphones(include_loopback=True):
         item = {"index": m.id, "nome": m.name}
@@ -24,7 +36,7 @@ def listar_dispositivos() -> dict:
     return {"mics": mics, "saidas": saidas}
 
 
-def _monitor_padrao():
+def _monitor_padrao(sc):
     alto_falante = sc.default_speaker()
     # O id do monitor é "<id da saída>.monitor"; get_microphone casa por trecho do id/nome
     for chave in (alto_falante.id, alto_falante.name):
@@ -42,10 +54,11 @@ class Capturador(CapturadorBase):
     def __init__(self, usar_mic: bool = True, mic_index: str | None = None,
                  saida_index: str | None = None):
         super().__init__()
+        sc = _soundcard()
         self._sistema = (
             sc.get_microphone(saida_index, include_loopback=True)
             if saida_index is not None
-            else _monitor_padrao()
+            else _monitor_padrao(sc)
         )
         self.dev_sistema = {"name": self._sistema.name.removeprefix("Monitor of ")}
         self._mic = None

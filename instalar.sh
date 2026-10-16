@@ -78,9 +78,19 @@ fi
 # --- 2. Pacotes do sistema --------------------------------------------------------
 passo "Pacotes do sistema (pode pedir sua senha pro sudo)"
 instalar_pacotes \
-    "python3 python3-venv python3-pip libpulse0 pulseaudio-utils curl xdg-utils libnss3 libxkbcommon-x11-0 libegl1 libgl1 libxcomposite1 libxdamage1 libxrandr2 libxtst6 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-randr0 fonts-noto-color-emoji" \
-    "pulseaudio-libs pulseaudio-utils curl xdg-utils nss libxkbcommon-x11 mesa-libEGL mesa-libGL xcb-util-cursor xcb-util-wm xcb-util-keysyms xcb-util-image xcb-util-renderutil google-noto-emoji-color-fonts" \
+    "python3 python3-venv python3-pip libpulse0 pulseaudio-utils curl xdg-utils libatomic1 libnss3 libxkbcommon-x11-0 libegl1 libgl1 libxcomposite1 libxdamage1 libxrandr2 libxtst6 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-randr0 fonts-noto-color-emoji" \
+    "pulseaudio-libs pulseaudio-utils curl xdg-utils nss libxkbcommon-x11 mesa-libEGL mesa-libGL xcb-util-cursor xcb-util-wm xcb-util-keysyms xcb-util-image xcb-util-renderutil google-noto-emoji-color-fonts libatomic fontconfig freetype libXcomposite libXdamage libXrandr libXrender libXtst alsa-lib pcsc-lite-libs libwayland-cursor libwayland-egl libxkbfile" \
     "python python-pip libpulse curl xdg-utils nss libxkbcommon-x11 mesa xcb-util-cursor xcb-util-wm xcb-util-keysyms xcb-util-image xcb-util-renderutil noto-fonts-emoji"
+# RHEL/Oracle/Rocky 8 e 9: o xcb-util-cursor (exigido pelo Qt 6) só existe no EPEL
+if [ "$PM" = "dnf" ] && ! ldconfig -p 2>/dev/null | grep -q 'libxcb-cursor\.so\.0'; then
+    echo "    habilitando o repositório EPEL pra instalar o xcb-util-cursor (usado pela janela)..."
+    if grep -qi '^ID="\?ol' /etc/os-release; then
+        $SUDO dnf install -y -q "oracle-epel-release-el$(rpm -E %rhel)" || true
+    else
+        $SUDO dnf install -y -q epel-release || true
+    fi
+    $SUDO dnf install -y -q xcb-util-cursor || aviso "xcb-util-cursor indisponível; a janela pode não abrir (o app usa o navegador)."
+fi
 ok "pacotes do sistema"
 
 # --- 3. Python --------------------------------------------------------------------
@@ -119,7 +129,10 @@ passo "Bibliotecas do app (alguns minutos na 1ª vez)"
 "$PY" -m pip install -r requirements.txt --quiet --disable-pip-version-check || falha "Falha ao instalar requirements.txt."
 ok "bibliotecas instaladas"
 # Janela própria (Qt): opcional — sem ela o app abre no navegador
-if "$PY" -m pip install "pywebview[qt]>=5.0" --quiet --disable-pip-version-check; then
+# --only-binary: em distros antigas (glibc 2.28) a versão mais nova do PyQt6 não
+# tem pacote pronto e o pip tentaria compilar; assim ele escolhe a mais nova que tem
+if "$PY" -m pip install "pywebview[qt]>=5.0" --quiet --disable-pip-version-check \
+    --only-binary PyQt6,PyQt6-Qt6,PyQt6-sip,PyQt6-WebEngine,PyQt6-WebEngine-Qt6; then
     ok "janela própria (Qt)"
 else
     aviso "Não deu pra instalar a janela Qt nesta distribuição; o app vai abrir no navegador."
