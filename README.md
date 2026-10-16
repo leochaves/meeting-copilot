@@ -10,10 +10,11 @@ Roda no seu PC. O áudio nunca sai da máquina. No modo local, nada sai.
 
 | | Obrigatório | Observação |
 |---|---|---|
-| **Windows 10 ou 11, 64 bits** | ✅ | A captura do áudio do PC usa o WASAPI do Windows |
+| **Windows 10/11 64 bits** ou **Linux x86_64** | ✅ | Linux: Ubuntu/Debian, Fedora ou Arch, com PulseAudio ou PipeWire (padrão nos desktops atuais) |
 | **~10 GB livres no disco** | ✅ | Python + bibliotecas (~3 GB), Whisper (~1,6 GB), Ollama + modelo (~5 GB) |
 | **Internet durante a instalação** | ✅ | Depois, o modo local funciona offline |
-| **winget** (Instalador de Aplicativo) | ✅ | Já vem no Windows 11 e no 10 atualizado. Se faltar: Microsoft Store → "Instalador de Aplicativo" |
+| **winget** (só Windows) | ✅ | Já vem no Windows 11 e no 10 atualizado. Se faltar: Microsoft Store → "Instalador de Aplicativo" |
+| **sudo** (só Linux) | ✅ | Pra instalar os pacotes do sistema (Python, bibliotecas de som e da janela) |
 | **Placa de vídeo NVIDIA** (6 GB+) | Recomendado | Com ela, transcrição e explicações levam segundos. Sem ela, tudo roda no processador, bem mais devagar (veja abaixo) |
 | **Driver NVIDIA atualizado** | Se tiver NVIDIA | Baixe pelo app NVIDIA ou em nvidia.com/drivers |
 | **Fone de ouvido** | Recomendado | Com caixa de som, o microfone também capta os outros e duplica as falas |
@@ -45,6 +46,29 @@ Windows pode pedir confirmação (UAC) ao instalar Python, WebView2 ou Ollama.
 Opções pela linha de comando: `Instalar.bat -ComOllama`, `-SemOllama`,
 `-SemAtalho`, `-ModeloLocal qwen3:4b`.
 
+### Linux
+
+```bash
+git clone https://github.com/leochaves/meeting-copilot
+cd meeting-copilot
+./instalar.sh
+```
+
+Faz o mesmo que no Windows: pacotes do sistema via `apt`/`dnf`/`pacman`
+(pede a senha do sudo), ambiente Python, bibliotecas, modelo do Whisper,
+Ollama pelo instalador oficial (opcional) e o atalho **Copiloto de
+Reuniões** no menu de aplicativos e na Área de Trabalho. Opções:
+`--com-ollama`, `--sem-ollama`, `--sem-atalho`, `--modelo-local X`.
+
+Diferenças no Linux:
+
+- O áudio dos outros vem do **monitor** da saída de som (PulseAudio/PipeWire).
+  Em Ajustes → Áudio, as saídas aparecem pelo nome do dispositivo.
+- A janela usa o Qt. Se ela não abrir, o app abre no navegador
+  (`./copiloto.sh --navegador` força isso).
+- Com placa NVIDIA, precisa do driver proprietário instalado (`nvidia-smi`
+  tem que funcionar).
+
 ### Sem placa NVIDIA
 
 O instalador detecta e já deixa configurado: Whisper `small` na CPU,
@@ -60,7 +84,7 @@ explicações.
 
 ## Usar
 
-Abra pelo atalho, ou por `Copiloto.bat`.
+Abra pelo atalho, ou por `Copiloto.bat` (Windows) / `./copiloto.sh` (Linux).
 
 - **Ao vivo**: ▶ Iniciar · ⏸ Pausar · ⏹ Encerrar; transcrição; cartões de
   explicação; perguntas; medidores de volume do mic e do PC.
@@ -85,7 +109,7 @@ Avise os participantes de que a reunião está sendo transcrita (LGPD).
                │ HTTP + WebSocket (127.0.0.1:8765)
 ┌──────────────▼──────────────────────────────┐
 │ servidor.py (FastAPI) → sessao.py            │
-│ audio.py: mic + loopback do Windows          │
+│ audio.py: mic + áudio do PC (WASAPI/Pulse)   │
 │ → transcricao_whisper.py / transcricao.py    │
 │ → cerebro.py (Claude) / cerebro_local.py     │
 │ db.py: dados/copiloto.db (SQLite, só local)  │
@@ -97,7 +121,7 @@ Avise os participantes de que a reunião está sendo transcrita (LGPD).
 | `app.py` | Abre o servidor local e a janela |
 | `servidor.py` | API e eventos ao vivo pra interface |
 | `sessao.py` | Uma reunião: iniciar/pausar/encerrar, explicações, ata |
-| `audio.py` | Captura do microfone + áudio do PC (loopback WASAPI) |
+| `audio.py` | Escolhe a captura do sistema: `audio_windows.py` (loopback WASAPI) ou `audio_linux.py` (monitor do PulseAudio/PipeWire); o comum fica em `audio_base.py` |
 | `transcricao_whisper.py` | Whisper local (GPU ou CPU) |
 | `transcricao.py` | Deepgram (nuvem, separa quem fala) |
 | `cerebro.py` / `cerebro_local.py` | Explicações e ata: Claude / Ollama |
@@ -116,6 +140,8 @@ Avise os participantes de que a reunião está sendo transcrita (LGPD).
 
 ## Desinstalar
 
-Apague a pasta do projeto e o atalho da Área de Trabalho. Os modelos ficam em
-`%USERPROFILE%\.cache\huggingface` (Whisper) e no Ollama (`ollama rm
-gemma3:4b`, ou desinstale o Ollama pelo Windows).
+Apague a pasta do projeto e o atalho da Área de Trabalho (no Linux, também
+`~/.local/share/applications/copiloto-de-reunioes.desktop`). Os modelos
+ficam em `~/.cache/huggingface` (Whisper; no Windows,
+`%USERPROFILE%\.cache\huggingface`) e no Ollama (`ollama rm gemma3:4b`, ou
+desinstale o Ollama).

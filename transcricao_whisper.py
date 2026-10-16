@@ -30,20 +30,32 @@ _lock_carga = threading.Lock()
 
 
 def _registrar_dlls_cuda():
-    """No Windows, as DLLs do CUDA instaladas via pip (nvidia-cublas/cudnn)
-    precisam estar no caminho de busca antes de carregar o modelo."""
-    if os.name != "nt":
-        return
+    """As bibliotecas do CUDA instaladas via pip (nvidia-cublas/cudnn) ficam
+    dentro do site-packages, fora do caminho de busca do sistema."""
     import importlib.util
 
     spec = importlib.util.find_spec("nvidia")
     if not spec or not spec.submodule_search_locations:
         return
     for base in spec.submodule_search_locations:
-        for pasta in Path(base).glob("*/bin"):
-            if str(pasta) not in os.environ["PATH"]:
-                os.add_dll_directory(str(pasta))
-                os.environ["PATH"] = str(pasta) + os.pathsep + os.environ["PATH"]
+        if os.name == "nt":
+            for pasta in Path(base).glob("*/bin"):
+                if str(pasta) not in os.environ["PATH"]:
+                    os.add_dll_directory(str(pasta))
+                    os.environ["PATH"] = str(pasta) + os.pathsep + os.environ["PATH"]
+        else:
+            # No Linux o LD_LIBRARY_PATH só vale se definido antes do processo
+            # abrir; então pré-carrega os .so com RTLD_GLOBAL. Quando o
+            # ctranslate2 pedir libcublas/libcudnn pelo nome, já estão na memória.
+            import ctypes
+
+            for padrao in ("cublas/lib/libcublasLt.so.*", "cublas/lib/libcublas.so.*",
+                           "cudnn/lib/libcudnn*.so.*"):
+                for so in sorted(Path(base).glob(padrao)):
+                    try:
+                        ctypes.CDLL(str(so), mode=ctypes.RTLD_GLOBAL)
+                    except OSError:
+                        pass
 
 
 def _modelo_cpu(nome: str):

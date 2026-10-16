@@ -3,6 +3,8 @@
 import asyncio
 import json
 import os
+import subprocess
+import sys
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -284,7 +286,10 @@ def exportar(rid: int):
 def abrir_exportacoes():
     pasta = PASTA_DADOS / "exportacoes"
     pasta.mkdir(exist_ok=True)
-    os.startfile(pasta)
+    if sys.platform == "win32":
+        os.startfile(pasta)
+    else:
+        subprocess.Popen(["xdg-open", str(pasta)])
     return {"ok": True}
 
 

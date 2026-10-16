@@ -1,12 +1,16 @@
 anthropic>=1.0
-PyAudioWPatch>=0.2.12
 numpy>=1.26
 python-dotenv>=1.0
 
-# App (servidor local + janela)
+# Captura de áudio: WASAPI no Windows, PulseAudio/PipeWire no Linux
+PyAudioWPatch>=0.2.12; sys_platform == "win32"
+soundcard>=0.4.3; sys_platform == "linux"
+
+# App (servidor local + janela: WebView2 no Windows, Qt no Linux)
 fastapi>=0.115
 uvicorn[standard]>=0.30
-pywebview>=5.0
+pywebview>=5.0; sys_platform == "win32"
+pywebview[qt]>=5.0; sys_platform == "linux"
 psutil>=6.0
 nvidia-ml-py>=12.0
 

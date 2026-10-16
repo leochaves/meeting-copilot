@@ -559,7 +559,12 @@ async function carregarAjustes() {
 $("#btn-salvar").addEventListener("click", () => tentar(async () => {
   const f = $("#form-ajustes");
   const v = (n) => f.elements[n]?.value;
-  const indice = (n) => (v(n) === "" || v(n) === undefined ? null : +v(n));
+  // Windows identifica dispositivos por número; Linux, por nome (texto)
+  const indice = (n) => {
+    const x = v(n);
+    if (x === "" || x === undefined) return null;
+    return /^\d+$/.test(x) ? +x : x;
+  };
   await api("/api/config", {
     method: "PUT",
     body: {
