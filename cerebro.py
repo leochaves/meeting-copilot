@@ -68,13 +68,21 @@ def _custo(modelo: str, uso) -> float:
     ) / 1e6
 
 
+def com_contexto(sistema: str, extra: str) -> str:
+    """Acrescenta o contexto do usuário (vocabulário etc.) ao system prompt."""
+    return f"{sistema}\n\n{extra}" if extra else sistema
+
+
 class Cerebro:
     def __init__(self, modelo: str = MODELO_PADRAO, esforco: str = "low",
-                 api_key: str | None = None):
+                 api_key: str | None = None, contexto: str = ""):
         self.client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
         self.modelo = modelo
         self.esforco = esforco
         self.mensagens: list[dict] = []
+        # Fixo durante a reunião, então o prompt caching continua valendo
+        self.sistema = com_contexto(SISTEMA, contexto)
+        self.sistema_ata = com_contexto(SISTEMA_ATA, contexto)
 
     def _stream(self, ao_escrever, **kwargs):
         kwargs.update(model=self.modelo, max_tokens=8000, output_config={"effort": self.esforco})
@@ -94,7 +102,7 @@ class Cerebro:
         try:
             final = self._stream(
                 ao_escrever,
-                system=SISTEMA,
+                system=self.sistema,
                 messages=self.mensagens,
                 cache_control={"type": "ephemeral"},
             )
@@ -115,7 +123,7 @@ class Cerebro:
     def gerar_ata(self, transcricao: str, _explicacoes: str, ao_escrever) -> tuple[str, float]:
         final = self._stream(
             ao_escrever,
-            system=SISTEMA_ATA,
+            system=self.sistema_ata,
             messages=[{"role": "user", "content": f"Transcrição:\n\n{transcricao}"}],
         )
         texto = "".join(b.text for b in final.content if b.type == "text")

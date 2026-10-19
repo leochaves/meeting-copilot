@@ -523,6 +523,22 @@ async function carregarAjustes() {
   if (!locais.includes(cfg.modelo_local)) locais.unshift(cfg.modelo_local);
 
   $("#form-ajustes").innerHTML = `
+    <fieldset class="largo">
+      <legend>Vocabulário e contexto</legend>
+      <span class="ajuda">Ajuda a transcrição e o modelo a acertar nomes de pessoas, empresas e tecnologias.</span>
+      <div class="tres-colunas">
+        <label>Nomes e termos
+          <textarea name="vocabulario" rows="7" placeholder="Leonardo&#10;Bê&#10;PlannerFit&#10;Kubernetes&#10;Supabase">${esc(cfg.vocabulario)}</textarea>
+          <span class="ajuda">Um por linha (ou separados por vírgula). Vão como dica pra transcrição e pro modelo.</span></label>
+        <label>Correções
+          <textarea name="correcoes" rows="7" placeholder="cuber netis => Kubernetes&#10;planner fit => PlannerFit&#10;super base => Supabase">${esc(cfg.correcoes)}</textarea>
+          <span class="ajuda"><code>errado => certo</code>, um por linha. Trocado no texto antes de salvar; vale palavra inteira.</span></label>
+        <label>Sobre você e suas reuniões
+          <textarea name="contexto" rows="7" placeholder="Sou o Leonardo, desenvolvedor. A Bê é minha sócia. Nas reuniões falamos do PlannerFit, um app de agenda pra professores, feito em Flutter + Supabase.">${esc(cfg.contexto)}</textarea>
+          <span class="ajuda">Texto livre que o modelo lê antes de explicar e de escrever a ata.</span></label>
+      </div>
+    </fieldset>
+
     <fieldset>
       <legend>Cérebro (explicações)</legend>
       <div class="opcoes">
@@ -611,6 +627,9 @@ $("#btn-salvar").addEventListener("click", () => tentar(async () => {
   await api("/api/config", {
     method: "PUT",
     body: {
+      vocabulario: v("vocabulario"),
+      correcoes: v("correcoes"),
+      contexto: v("contexto"),
       cerebro: $("input[name=cerebro]:checked", f).value,
       modelo_claude: v("modelo_claude"),
       esforco: v("esforco"),

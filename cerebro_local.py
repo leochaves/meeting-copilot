@@ -9,7 +9,7 @@ import os
 import urllib.error
 import urllib.request
 
-from cerebro import SISTEMA, SISTEMA_ATA
+from cerebro import SISTEMA, SISTEMA_ATA, com_contexto
 
 MODELO_PADRAO = "gemma3:4b"
 OLLAMA = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")  # IPv4 direto: localhost tenta IPv6 antes
@@ -52,9 +52,11 @@ def modelos_carregados() -> list[dict]:
 
 
 class CerebroLocal:
-    def __init__(self, modelo: str = MODELO_PADRAO, dispositivo: str = "gpu"):
+    def __init__(self, modelo: str = MODELO_PADRAO, dispositivo: str = "gpu", contexto: str = ""):
         self.modelo = modelo
         self.mensagens: list[dict] = []
+        self.sistema = com_contexto(SISTEMA, contexto)
+        self.sistema_ata = com_contexto(SISTEMA_ATA, contexto)
         self._pensar = False  # desliga o "thinking" de modelos como qwen3; vira None se o modelo não aceitar
         # num_gpu 0 = nenhuma camada na placa de vídeo (bem mais lento: ~45 s
         # por explicação com gemma3:4b num Ryzen 7 2700)
@@ -82,7 +84,7 @@ class CerebroLocal:
         if recentes[0]["role"] != "user":
             recentes = recentes[1:]
         try:
-            resposta = self._chat([{"role": "system", "content": SISTEMA}] + recentes, ao_escrever)
+            resposta = self._chat([{"role": "system", "content": self.sistema}] + recentes, ao_escrever)
         except Exception:
             self.mensagens.pop()
             raise
@@ -102,7 +104,7 @@ class CerebroLocal:
         else:
             conteudo = f"Transcrição:\n\n{transcricao}"
         mensagens = [
-            {"role": "system", "content": SISTEMA_ATA},
+            {"role": "system", "content": self.sistema_ata},
             {"role": "user", "content": conteudo},
         ]
         return self._chat(mensagens, ao_escrever), 0.0

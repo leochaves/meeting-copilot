@@ -10,6 +10,7 @@ from datetime import datetime
 
 import numpy as np
 
+import vocabulario
 from audio import Capturador
 from db import Db
 from transcricao import Fala
@@ -23,27 +24,30 @@ def mmss(seg: float) -> str:
 
 
 def criar_cerebro(cfg: dict):
+    contexto = vocabulario.bloco_sistema(cfg.get("contexto", ""), vocabulario.termos(cfg.get("vocabulario", "")))
     if cfg["cerebro"] == "local":
         from cerebro_local import CerebroLocal
 
-        c = CerebroLocal(cfg["modelo_local"], cfg.get("local_dispositivo", "gpu"))
+        c = CerebroLocal(cfg["modelo_local"], cfg.get("local_dispositivo", "gpu"), contexto)
         c.aquecer()
         return c
     from cerebro import Cerebro
 
-    return Cerebro(cfg["modelo_claude"], cfg["esforco"], cfg.get("anthropic_key") or None)
+    return Cerebro(cfg["modelo_claude"], cfg["esforco"], cfg.get("anthropic_key") or None, contexto)
 
 
 def criar_transcritor(cfg: dict, ao_receber):
+    termos = vocabulario.termos(cfg.get("vocabulario", ""))
     if cfg["transcricao"] == "deepgram":
         from transcricao import Transcritor
 
-        return Transcritor(ao_receber, cfg.get("deepgram_key") or None)
+        return Transcritor(ao_receber, cfg.get("deepgram_key") or None, termos)
     from transcricao_whisper import TranscritorWhisper
 
     return TranscritorWhisper(
         ao_receber, cfg["whisper_modelo"], float(cfg["limiar"]),
         dispositivo=cfg.get("whisper_dispositivo", "gpu"),
+        prompt=vocabulario.prompt_whisper(termos),
     )
 
 
@@ -71,6 +75,7 @@ class Sessao:
         self._t0 = 0.0  # time.monotonic() no início da gravação
         # Pausas em segundos de relógio desde _t0: [início, fim] (fim None = em curso)
         self._pausas: list[list[float | None]] = []
+        self._correcoes = vocabulario.correcoes(cfg.get("correcoes", ""))
         self._proximo = 0.0
         self._ultimo_nivel = 0.0
         self._cap: Capturador | None = None
@@ -289,7 +294,8 @@ class Sessao:
         # mas transcrita depois dela continua valendo.
         if any(ini <= fala.t < (fim if fim is not None else float("inf")) for ini, fim in self._pausas):
             return
-        fala = Fala(t=self._tempo_gravado(fala.t), quem=fala.quem, texto=fala.texto)
+        texto = vocabulario.corrigir(fala.texto, self._correcoes)
+        fala = Fala(t=self._tempo_gravado(fala.t), quem=fala.quem, texto=texto)
         with self._pend_lock:
             self._pendentes.append(fala)
         if self.id:

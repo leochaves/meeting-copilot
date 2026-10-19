@@ -19,7 +19,7 @@ class Fala:
 
 
 class Transcritor:
-    def __init__(self, ao_receber, chave: str | None = None):
+    def __init__(self, ao_receber, chave: str | None = None, termos: list[str] | None = None):
         self._ao_receber = ao_receber
         self._chave = chave or os.getenv("DEEPGRAM_API_KEY")
         if not self._chave:
@@ -38,7 +38,11 @@ class Transcritor:
             "smart_format": "true",
             "endpointing": 400,
         }
-        self._url = "wss://api.deepgram.com/v1/listen?" + urlencode(params)
+        # Nomes/termos do usuário: "keyterm" no nova-3, "keywords" nos anteriores
+        if termos:
+            chave_termos = "keyterm" if params["model"].startswith("nova-3") else "keywords"
+            params[chave_termos] = termos[:100]
+        self._url = "wss://api.deepgram.com/v1/listen?" + urlencode(params, doseq=True)
         self._ws = None
 
     def rodar(self, blocos, parar: threading.Event):

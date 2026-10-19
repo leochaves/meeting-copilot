@@ -38,6 +38,10 @@ PADRAO = {
     "usar_mic": True,
     "mic_index": None,  # None = padrão do Windows
     "saida_index": None,
+    # Vocabulário e contexto (ajudam a transcrição e o modelo a acertar nomes)
+    "contexto": "",
+    "vocabulario": "",
+    "correcoes": "",
     "anthropic_key": os.getenv("ANTHROPIC_API_KEY", ""),
     "deepgram_key": os.getenv("DEEPGRAM_API_KEY", ""),
 }

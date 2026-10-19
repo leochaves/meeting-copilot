@@ -141,8 +141,9 @@ class _Cortador:
 
 class TranscritorWhisper:
     def __init__(self, ao_receber, modelo: str = "large-v3-turbo", limiar: float = 250,
-                 idioma: str = "pt", dispositivo: str = "gpu"):
+                 idioma: str = "pt", dispositivo: str = "gpu", prompt: str | None = None):
         self._ao_receber = ao_receber
+        self._prompt = prompt  # nomes/termos do usuário: o Whisper imita a grafia daqui
         self._fila: queue.Queue = queue.Queue()
         self._modelo, self.descricao = carregar_modelo(modelo, dispositivo)
         self._idioma = idioma
@@ -186,6 +187,7 @@ class TranscritorWhisper:
                     vad_filter=True,
                     condition_on_previous_text=False,
                     beam_size=5,
+                    initial_prompt=self._prompt,
                 )
                 texto = " ".join(s.text.strip() for s in segmentos).strip()
             except Exception as e:
