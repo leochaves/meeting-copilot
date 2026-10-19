@@ -49,15 +49,34 @@ def prompt_whisper(lista: list[str]) -> str | None:
     return prompt[:MAX_PROMPT_WHISPER]
 
 
-def bloco_sistema(contexto: str, lista: list[str]) -> str:
-    """Trecho acrescentado ao system prompt do modelo de linguagem."""
+def bloco_sistema(contexto: str, lista: list[str], assunto: str = "") -> str:
+    """Trecho acrescentado ao system prompt do modelo de linguagem.
+
+    O contexto é material de referência, não conteúdo: sem esse aviso,
+    modelos pequenos montam a ata a partir dele quando a transcrição é fraca
+    (ex.: listam como "tarefas" as funções das pessoas descritas aqui).
+    """
     partes = []
     if (contexto or "").strip():
-        partes.append(f"Sobre o usuário e as reuniões dele:\n{contexto.strip()}")
+        partes.append(f"Sobre o usuário:\n{contexto.strip()}")
     if lista:
         partes.append(
-            "Nomes e termos que aparecem nessas reuniões. A transcrição automática "
-            "pode escrever errado — quando algo soar parecido, é um destes; use "
-            "sempre esta grafia: " + ", ".join(lista) + "."
+            "Grafias corretas de nomes e termos (a transcrição automática pode "
+            "escrever errado; quando algo soar parecido, use esta grafia): "
+            + ", ".join(lista) + "."
         )
-    return "\n\n".join(partes)
+    if (assunto or "").strip():
+        partes.append(
+            f"Assunto previsto desta reunião, informado pelo usuário: {assunto.strip()}\n"
+            "(é só a expectativa — confira com o que for de fato dito)."
+        )
+    if not partes:
+        return ""
+    aviso = (
+        "## Material de referência — NÃO é o conteúdo da reunião\n"
+        "Use o que vem abaixo só para reconhecer nomes, siglas e grafias e para "
+        "entender termos. Nunca tire daqui fatos, assuntos, decisões, tarefas ou "
+        "responsáveis: eles só valem se forem ditos na transcrição. Se a "
+        "transcrição não falar de um projeto ou pessoa listado aqui, não o mencione."
+    )
+    return aviso + "\n\n" + "\n\n".join(partes)

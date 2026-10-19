@@ -20,8 +20,9 @@ ajudar a entender.
 💡 Sugestões: 1–3 itens do que o usuário poderia dizer, perguntar ou observar.
 ⚠️ Atenção: decisões, prazos ou tarefas atribuídas ao usuário — só se houver.
 
-Omita seções vazias. Se o trecho for irrelevante (conversa paralela, silêncio, \
-ruído), diga isso em uma linha.
+Omita seções vazias. Fale só do que foi dito nos trechos — nunca complete com \
+suposições. Se o trecho for irrelevante ou sem sentido (conversa paralela, \
+teste de microfone, silêncio, ruído), diga isso em uma linha.
 
 Quando o usuário fizer uma pergunta direta, responda a pergunta usando tudo o \
 que foi dito na reunião até ali, sem o formato acima."""
@@ -42,7 +43,20 @@ Quem, o quê e prazo, quando tiver sido dito.
 Dúvidas e assuntos sem conclusão.
 ## Próximos passos
 
-Seja fiel ao que foi dito; não invente nomes, números ou prazos."""
+Regras:
+- Use exclusivamente o que foi dito na transcrição. Não invente assuntos, \
+nomes, decisões, tarefas, números ou prazos.
+- Cada decisão e cada tarefa precisa ter sido dita de fato. Uma proposta ou \
+sugestão não é decisão.
+- Se a transcrição for curta, sem sentido ou não parecer uma reunião de \
+trabalho (teste de microfone, frases soltas, ruído), não force uma ata: depois \
+do título, escreva só `## Resumo` e uma frase dizendo isso."""
+
+LEMBRETE_ATA = (
+    "\n\n---\nEscreva a ata usando somente o que está na transcrição acima. "
+    "O material de referência das instruções serve só pra grafia de nomes e "
+    "termos — não é conteúdo desta reunião."
+)
 
 MODELO_PADRAO = "claude-opus-5-5"
 
@@ -124,7 +138,7 @@ class Cerebro:
         final = self._stream(
             ao_escrever,
             system=self.sistema_ata,
-            messages=[{"role": "user", "content": f"Transcrição:\n\n{transcricao}"}],
+            messages=[{"role": "user", "content": f"Transcrição:\n\n{transcricao}{LEMBRETE_ATA}"}],
         )
         texto = "".join(b.text for b in final.content if b.type == "text")
         return texto, _custo(self.modelo, final.usage)

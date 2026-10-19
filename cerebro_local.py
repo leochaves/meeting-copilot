@@ -9,7 +9,7 @@ import os
 import urllib.error
 import urllib.request
 
-from cerebro import SISTEMA, SISTEMA_ATA, com_contexto
+from cerebro import LEMBRETE_ATA, SISTEMA, SISTEMA_ATA, com_contexto
 
 MODELO_PADRAO = "gemma3:4b"
 OLLAMA = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")  # IPv4 direto: localhost tenta IPv6 antes
@@ -103,6 +103,8 @@ class CerebroLocal:
             )
         else:
             conteudo = f"Transcrição:\n\n{transcricao}"
+        # Modelos pequenos seguem melhor a instrução que vem por último
+        conteudo += LEMBRETE_ATA
         mensagens = [
             {"role": "system", "content": self.sistema_ata},
             {"role": "user", "content": conteudo},

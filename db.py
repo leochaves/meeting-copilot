@@ -21,7 +21,8 @@ create table if not exists reunioes (
     status   text not null,          -- gravando | pausada | gerando_ata | encerrada | interrompida
     ata      text,
     custo    real default 0,
-    cerebro  text
+    cerebro  text,
+    assunto  text default ''
 );
 create table if not exists falas (
     id          integer primary key,
@@ -58,6 +59,10 @@ class Db:
         with self._lock:
             self._con.execute("pragma foreign_keys = on")
             self._con.executescript(ESQUEMA)
+            # Colunas novas em bancos criados por versões anteriores
+            colunas = {r[1] for r in self._con.execute("pragma table_info(reunioes)")}
+            if "assunto" not in colunas:
+                self._con.execute("alter table reunioes add column assunto text default ''")
             # Reuniões que estavam abertas quando o app fechou/caiu
             self._con.execute(
                 "update reunioes set status = 'interrompida', fim = coalesce(fim, inicio + duracao) "
@@ -77,10 +82,10 @@ class Db:
 
     # --- reuniões ----------------------------------------------------------
 
-    def criar_reuniao(self, titulo: str, cerebro: str) -> int:
+    def criar_reuniao(self, titulo: str, cerebro: str, assunto: str = "") -> int:
         cur = self._exec(
-            "insert into reunioes (titulo, inicio, status, cerebro) values (?, ?, 'gravando', ?)",
-            (titulo, time.time(), cerebro),
+            "insert into reunioes (titulo, inicio, status, cerebro, assunto) values (?, ?, 'gravando', ?, ?)",
+            (titulo, time.time(), cerebro, assunto),
         )
         return cur.lastrowid
 

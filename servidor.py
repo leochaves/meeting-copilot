@@ -19,7 +19,7 @@ import monitor
 from audio import listar_dispositivos
 from cerebro_local import listar_modelos
 from db import PASTA_DADOS, Db
-from sessao import Sessao, mmss
+from sessao import Sessao, criar_cerebro, gerar_ata, mmss
 
 RAIZ = Path(__file__).parent
 load_dotenv(RAIZ / ".env")
@@ -143,6 +143,7 @@ async def ws(websocket: WebSocket):
 
 class Inicio(BaseModel):
     titulo: str = ""
+    assunto: str = ""  # opcional, só desta reunião: ajuda o modelo sem fixar o tema
     intervalo: int | None = None
 
 
@@ -171,6 +172,7 @@ def iniciar(corpo: Inicio):
     if sessao and sessao.ativa():
         raise HTTPException(409, "Já tem uma reunião em andamento")
     cfg = config()
+    cfg["assunto"] = corpo.assunto.strip()
     if corpo.intervalo is not None:
         cfg["intervalo"] = corpo.intervalo
     sessao = Sessao(db, cfg, hub.emitir)
@@ -271,6 +273,34 @@ def _markdown(r: dict) -> str:
     partes += ["", "## Transcrição", ""]
     partes += [f"- [{mmss(f['t'])}] **{f['quem']}:** {f['texto']}" for f in r["falas"]]
     return "\n".join(partes) + "\n"
+
+
+@app.post("/api/reunioes/{rid}/ata")
+def regerar_ata(rid: int):
+    """Refaz a ata de uma reunião salva com os Ajustes atuais (modelo,
+    vocabulário, contexto). Leva de alguns segundos a ~1 min."""
+    if sessao and sessao.ativa():
+        raise HTTPException(409, "Encerre a reunião em andamento antes de regerar uma ata")
+    r = db.obter_reuniao(rid)
+    if not r:
+        raise HTTPException(404, "Reunião não encontrada")
+    if not r["falas"]:
+        raise HTTPException(400, "Essa reunião não tem falas")
+    cfg = {**config(), "assunto": r.get("assunto") or ""}
+    try:
+        cerebro = criar_cerebro(cfg)
+    except Exception as e:
+        raise HTTPException(503, f"Não consegui carregar o modelo: {e}")
+    try:
+        _sugerido, texto, custo = gerar_ata(cerebro, r, lambda _t: None)
+    except Exception as e:
+        raise HTTPException(502, f"Não consegui gerar a ata: {e}")
+    finally:
+        if hasattr(cerebro, "liberar"):
+            cerebro.liberar()
+    db.atualizar_reuniao(rid, ata=texto)
+    db.somar_custo(rid, custo)
+    return {"ata": texto}
 
 
 @app.post("/api/reunioes/{rid}/exportar")

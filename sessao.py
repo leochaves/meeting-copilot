@@ -4,6 +4,7 @@ Tudo roda em threads; a interface acompanha pelos eventos enviados a `emitir`.
 """
 
 import queue
+import re
 import threading
 import time
 from datetime import datetime
@@ -23,8 +24,46 @@ def mmss(seg: float) -> str:
     return f"{int(seg // 60):02d}:{int(seg % 60):02d}"
 
 
+_SECAO_VAZIA = re.compile(
+    r"^\s*[*\-•]*\s*(nenhum|nenhuma|não há|não houve|sem |a transcrição não)", re.IGNORECASE
+)
+
+
+def limpar_ata(texto: str) -> str:
+    """Tira seções que o modelo preencheu só com "Nenhuma decisão foi tomada"
+    e afins (o prompt pede pra omitir, mas modelos pequenos insistem)."""
+    blocos = re.split(r"(?m)^(?=## )", texto.strip())
+    mantidos = []
+    for bloco in blocos:
+        if not bloco.strip():
+            continue
+        titulo, _, corpo = bloco.partition("\n")
+        linhas = [l for l in corpo.splitlines() if l.strip()]
+        vazia = bloco.startswith("## ") and not titulo.lower().startswith("## resumo") and (
+            not linhas or all(_SECAO_VAZIA.match(l) for l in linhas)
+        )
+        if not vazia:
+            mantidos.append(bloco.rstrip())
+    return "\n\n".join(mantidos)
+
+
+def gerar_ata(cerebro, reuniao: dict, ao_escrever) -> tuple[str | None, str, float]:
+    """Gera a ata de uma reunião salva. Devolve (título sugerido, ata, custo)."""
+    transcricao = "\n".join(f"[{mmss(f['t'])}] {f['quem']}: {f['texto']}" for f in reuniao["falas"])
+    explicacoes = "\n\n".join(e["texto"] for e in reuniao["explicacoes"] if e["tipo"] == "explicacao")
+    texto, custo = cerebro.gerar_ata(transcricao, explicacoes, ao_escrever)
+    sugerido = None
+    linhas = texto.strip().splitlines()
+    if linhas and linhas[0].lower().startswith("título:"):  # 1ª linha "Título: ..."
+        sugerido = linhas[0].split(":", 1)[1].strip().strip("`*\"") or None
+        texto = "\n".join(linhas[1:])
+    return sugerido, limpar_ata(texto), custo
+
+
 def criar_cerebro(cfg: dict):
-    contexto = vocabulario.bloco_sistema(cfg.get("contexto", ""), vocabulario.termos(cfg.get("vocabulario", "")))
+    contexto = vocabulario.bloco_sistema(
+        cfg.get("contexto", ""), vocabulario.termos(cfg.get("vocabulario", "")), cfg.get("assunto", "")
+    )
     if cfg["cerebro"] == "local":
         from cerebro_local import CerebroLocal
 
@@ -108,6 +147,7 @@ class Sessao:
         return {
             "id": self.id,
             "titulo": self.titulo,
+            "assunto": self.cfg.get("assunto", ""),
             "estado": self.estado,
             "detalhe": self.detalhe,
             "decorrido": self.decorrido,
@@ -192,7 +232,9 @@ class Sessao:
                 self._mudar("encerrada")
                 return
 
-            self.id = self.db.criar_reuniao(self.titulo, self.resumo()["cerebro"] or "")
+            self.id = self.db.criar_reuniao(
+                self.titulo, self.resumo()["cerebro"] or "", self.cfg.get("assunto", "")
+            )
             self._cap.iniciar()
             self._t0 = time.monotonic()
             self._proximo = self._t0 + self.intervalo
@@ -244,25 +286,17 @@ class Sessao:
                     print(f"[não consegui liberar {type(parte).__name__}: {e}]")
 
     def _gerar_ata(self, reuniao: dict):
-        transcricao = "\n".join(f"[{mmss(f['t'])}] {f['quem']}: {f['texto']}" for f in reuniao["falas"])
-        explicacoes = "\n\n".join(e["texto"] for e in reuniao["explicacoes"] if e["tipo"] == "explicacao")
         self._emitir({"tipo": "ata_inicio"})
         try:
-            texto, custo = self.cerebro.gerar_ata(
-                transcricao, explicacoes, lambda t: self._emitir({"tipo": "ata_delta", "texto": t})
+            sugerido, texto, custo = gerar_ata(
+                self.cerebro, reuniao, lambda t: self._emitir({"tipo": "ata_delta", "texto": t})
             )
         except Exception as e:
             self._emitir({"tipo": "erro", "mensagem": f"Não consegui gerar a ata: {e}"})
             return
         self._somar_custo(custo)
-
-        # 1ª linha "Título: ..." vira o título se o usuário não deu um
-        linhas = texto.strip().splitlines()
-        if linhas and linhas[0].lower().startswith("título:"):
-            sugerido = linhas[0].split(":", 1)[1].strip().strip("`*\"")
-            texto = "\n".join(linhas[1:]).strip()
-            if sugerido and self.titulo.startswith("Reunião de "):
-                self.renomear(sugerido)
+        if sugerido and self.titulo.startswith("Reunião de "):  # usuário não deu título
+            self.renomear(sugerido)
         self.db.atualizar_reuniao(self.id, ata=texto)
         self._emitir({"tipo": "ata_fim", "texto": texto, "id": self.id})
 

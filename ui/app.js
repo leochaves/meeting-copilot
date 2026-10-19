@@ -164,6 +164,11 @@ function aplicarEstado(novo) {
   const titulo = $("#titulo");
   if (ativa(e) && document.activeElement !== titulo) titulo.value = novo.titulo || "";
   if (e === "encerrada" && anterior.estado !== "encerrada") titulo.value = "";
+  // O assunto vale pra reunião inteira (vai pro modelo ao iniciar): só edita parado
+  const assunto = $("#assunto");
+  assunto.disabled = ativa(e);
+  if (ativa(e)) assunto.value = novo.assunto || "";
+  if (e === "encerrada" && anterior.estado !== "encerrada") assunto.value = "";
 
   if (novo.intervalo !== undefined && ativa(e)) $("#intervalo").value = String(novo.intervalo);
   if (!ativa(e)) { preencherTrilho($("#nivel-mic"), 0); preencherTrilho($("#nivel-sis"), 0); }
@@ -279,7 +284,7 @@ function tratarEvento(ev) {
 }
 
 $("#btn-iniciar").addEventListener("click", () =>
-  tentar(async () => aplicarEstado(await api("/api/reuniao/iniciar", { method: "POST", body: { titulo: $("#titulo").value, intervalo: +$("#intervalo").value } }))));
+  tentar(async () => aplicarEstado(await api("/api/reuniao/iniciar", { method: "POST", body: { titulo: $("#titulo").value, assunto: $("#assunto").value, intervalo: +$("#intervalo").value } }))));
 $("#btn-pausar").addEventListener("click", () => tentar(() => api("/api/reuniao/pausar", { method: "POST" })));
 $("#btn-retomar").addEventListener("click", () => tentar(() => api("/api/reuniao/retomar", { method: "POST" })));
 $("#btn-encerrar").addEventListener("click", () => tentar(() => api("/api/reuniao/encerrar", { method: "POST" })));
@@ -363,11 +368,14 @@ async function abrirReuniao(id) {
       <button class="btn" id="voltar">← Voltar</button>
       <input class="titulo-input" id="det-titulo" value="${esc(r.titulo)}" maxlength="120">
       <div class="acoes">
+        <button class="btn" id="det-regerar" ${r.falas.length ? "" : "disabled"}
+          title="Refaz a ata com o modelo, o vocabulário e o contexto atuais dos Ajustes">↻ Regerar ata</button>
         <button class="btn" id="det-exportar">⬇ Exportar .md</button>
         <button class="btn perigo" id="det-apagar">Apagar</button>
       </div>
     </header>
     <div class="detalhe">${data(r.inicio)} · ${mmss(r.duracao)} · ${esc(r.cerebro || "")}${r.custo ? " · " + usd(r.custo) : ""} · ${STATUS[r.status] || r.status}</div>
+    ${r.assunto ? `<div class="detalhe">Assunto: ${esc(r.assunto)}</div>` : ""}
     <nav class="abas">
       <button data-aba="ata">Ata</button>
       <button data-aba="copiloto">Copiloto (${r.explicacoes.length})</button>
@@ -410,6 +418,15 @@ async function abrirReuniao(id) {
   $("#voltar").addEventListener("click", () => { fecharDetalhe(); carregarLista(); });
   $("#det-titulo").addEventListener("change", (e) =>
     tentar(async () => { await api("/api/reunioes/" + id, { method: "PATCH", body: { texto: e.target.value } }); toast("Título salvo."); }));
+  const regerar = $("#det-regerar");
+  regerar.addEventListener("click", async () => {
+    regerar.disabled = true;
+    regerar.textContent = "Gerando…";
+    toast("Gerando a ata de novo (pode levar até 1 min)…");
+    const ok = await tentar(() => api(`/api/reunioes/${id}/ata`, { method: "POST" }));
+    if (ok) { toast("Ata refeita."); abrirReuniao(id); }
+    else { regerar.disabled = false; regerar.textContent = "↻ Regerar ata"; }
+  });
   $("#det-exportar").addEventListener("click", () =>
     tentar(async () => { const { arquivo } = await api(`/api/reunioes/${id}/exportar`, { method: "POST" }); toast("Exportado: " + arquivo); }));
   const apagar = $("#det-apagar");

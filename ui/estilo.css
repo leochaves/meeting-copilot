@@ -105,6 +105,8 @@ input:not([type=checkbox]):not([type=radio]), select {
 input:focus, select:focus { outline: 2px solid var(--acento); outline-offset: -1px; }
 .titulo-input { flex: 1; min-width: 200px; font-size: 16px !important; font-weight: 600; }
 .busca { flex: 1; min-width: 200px; }
+.assunto-input { width: 100%; font-size: 13px !important; }
+.assunto-input:disabled { opacity: .7; }
 .campo-inline { display: flex; align-items: center; gap: 8px; color: var(--texto-2); font-size: 13px; }
 
 .pill {
