@@ -62,6 +62,32 @@ function toast(msg, erro = false) {
   setTimeout(() => el.remove(), erro ? 7000 : 3500);
 }
 
+async function copiar(texto) {
+  try {
+    await navigator.clipboard.writeText(texto);
+  } catch {
+    // Reserva pra janelas onde a API da área de transferência não existe
+    const area = document.createElement("textarea");
+    area.value = texto;
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.append(area);
+    area.select();
+    document.execCommand("copy");
+    area.remove();
+  }
+  toast("Copiado.");
+}
+
+function botaoCopiar(texto, rotulo = "📋 Copiar") {
+  const b = document.createElement("button");
+  b.className = "btn pequeno";
+  b.type = "button";
+  b.textContent = rotulo;
+  b.addEventListener("click", () => copiar(texto));
+  return b;
+}
+
 async function api(caminho, opcoes = {}) {
   const r = await fetch(caminho, {
     headers: { "Content-Type": "application/json" },
@@ -216,6 +242,7 @@ function tratarEvento(ev) {
         } else {
           rodape.hidden = false;
           rodape.textContent = `${ev.segundos.toFixed(1)} s` + (ev.custo ? ` · ${usd(ev.custo)}` : "");
+          rodape.append(botaoCopiar(ev.texto));
         }
       }
       cartaoAtual = null;
@@ -235,6 +262,7 @@ function tratarEvento(ev) {
         rodape.hidden = false;
         rodape.innerHTML = `<button class="btn pequeno">Abrir reunião</button>`;
         $("button", rodape).addEventListener("click", () => { irPara("reunioes"); abrirReuniao(ev.id); });
+        rodape.append(botaoCopiar(ev.texto, "📋 Copiar ata"));
       }
       cartaoAta = null;
       break;
@@ -357,9 +385,24 @@ async function abrirReuniao(id) {
       <div class="fala"><time>${mmss(f.t)}</time><span class="quem ${f.quem === "Você" ? "voce" : ""}">${esc(f.quem)}</span><span>${esc(f.texto)}</span></div>`).join("")
       : `<p class="vazio">Nenhuma fala registrada.</p>`,
   };
+  const textoTranscricao = () => r.falas.map((f) => `[${mmss(f.t)}] ${f.quem}: ${f.texto}`).join("\n");
   const mostrar = (aba) => {
     $$(".abas button", det).forEach((b) => b.classList.toggle("ativo", b.dataset.aba === aba));
-    $("#det-conteudo").innerHTML = abas[aba]();
+    const conteudo = $("#det-conteudo");
+    conteudo.innerHTML = abas[aba]();
+    // Botões de copiar: a ata e a transcrição inteiras, e cada explicação
+    const barra = document.createElement("div");
+    barra.className = "barra-copiar";
+    if (aba === "ata" && r.ata) barra.append(botaoCopiar(r.ata, "📋 Copiar ata"));
+    if (aba === "transcricao" && r.falas.length) barra.append(botaoCopiar(textoTranscricao(), "📋 Copiar transcrição"));
+    if (barra.children.length) conteudo.prepend(barra);
+    if (aba === "copiloto") {
+      $$(".cartao", conteudo).forEach((c, i) => {
+        const rodape = document.createElement("footer");
+        rodape.append(botaoCopiar(r.explicacoes[i].texto));
+        c.append(rodape);
+      });
+    }
   };
   $$(".abas button", det).forEach((b) => b.addEventListener("click", () => mostrar(b.dataset.aba)));
   mostrar(r.ata ? "ata" : r.explicacoes.length ? "copiloto" : "transcricao");

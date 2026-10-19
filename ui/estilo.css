@@ -153,6 +153,10 @@ input:focus, select:focus { outline: 2px solid var(--acento); outline-offset: -1
 .cartao .corpo.md { white-space: normal; }
 .cartao footer { margin-top: 8px; font-size: 11px; color: var(--texto-3); display: flex; gap: 12px; align-items: center; }
 .cartao.erro { border-color: var(--vermelho); color: var(--vermelho); }
+.cartao footer .btn { margin-left: auto; }
+.cartao footer .btn + .btn { margin-left: 0; }
+.barra-copiar { display: flex; justify-content: flex-end; gap: 8px; }
+.cartao, .md, .fala { user-select: text; }
 .pensando { color: var(--texto-3); font-style: italic; }
 .pensando::after { content: "…"; animation: piscar 1s infinite; }
 

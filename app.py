@@ -106,7 +106,8 @@ def _abrir_janela() -> bool:
     try:
         import webview
 
-        webview.create_window(TITULO, URL, width=1320, height=860, min_size=(960, 620))
+        # text_select: o pywebview bloqueia a seleção de texto por padrão
+        webview.create_window(TITULO, URL, width=1320, height=860, min_size=(960, 620), text_select=True)
     except Exception as e:
         print(f"[sem janela própria ({e}); abrindo no navegador]")
         return False
