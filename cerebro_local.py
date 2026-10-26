@@ -19,6 +19,9 @@ JANELA = 8  # mensagens (4 trocas) mantidas no contexto
 OPCOES = {"num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "4096")), "temperature": 0.4}
 # Cabe no num_ctx junto com o prompt e a resposta (~3 caracteres por token)
 MAX_CHARS_ATA = 7000
+# Revisão pós-reunião: sem o Whisper na placa, sobra memória pra mais contexto
+CTX_REVISAO = int(os.getenv("OLLAMA_NUM_CTX_REVISAO", "12288"))
+MAX_CHARS_REVISAO = 16000  # transcrição no prompt da revisão
 
 ERRO_OFFLINE = "Ollama não está rodando — abra o app Ollama ou rode `ollama serve`"
 
@@ -90,6 +93,33 @@ class CerebroLocal:
             raise
         self.mensagens.append({"role": "assistant", "content": resposta})
         return resposta, 0.0
+
+    def revisar(self, sistema: str, mensagens: list[dict], esquema: dict) -> tuple[dict, float]:
+        """Revisão pós-reunião. Fora da reunião o Whisper não está na placa,
+        então dá pra usar um contexto maior (a transcrição inteira cabe melhor)."""
+        corpo = {
+            "model": self.modelo,
+            "messages": [{"role": "system", "content": sistema}] + mensagens,
+            "stream": False,
+            "format": esquema,  # saída estruturada do Ollama: JSON nesse esquema
+            "keep_alive": "10m",
+            "options": {**self.opcoes, "num_ctx": CTX_REVISAO, "temperature": 0.2},
+        }
+        if self._pensar is not None:
+            corpo["think"] = self._pensar
+        try:
+            with _post("/api/chat", corpo, timeout=600) as r:
+                resposta = json.load(r)
+        except urllib.error.HTTPError as e:
+            if e.code == 400 and "think" in corpo:
+                self._pensar = None
+                return self.revisar(sistema, mensagens, esquema)
+            raise
+        except urllib.error.URLError:
+            raise RuntimeError(ERRO_OFFLINE)
+        if "error" in resposta:
+            raise RuntimeError(resposta["error"])
+        return json.loads(resposta["message"]["content"]), 0.0
 
     def gerar_ata(self, transcricao: str, explicacoes: str, ao_escrever) -> tuple[str, float]:
         # O contexto é curto: se a reunião não couber, usa as explicações

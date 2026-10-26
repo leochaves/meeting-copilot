@@ -94,6 +94,10 @@ Abra pelo atalho, ou por `Copiloto.bat` (Windows) / `./copiloto.sh` (Linux).
   custo do Claude.
 - **Ajustes**: Claude ou local; Whisper ou Deepgram; GPU ou CPU; microfone e
   saída; sensibilidade; intervalo; chaves de API.
+- **Revisar com IA** (aba de cada reunião no histórico): converse com a IA
+  pra corrigir nomes, termos e quem falou o quê. Ela propõe as trocas na
+  transcrição, a ata reescrita e o que vale guardar nos Ajustes (termos,
+  correções, fatos) — nada muda até você aplicar.
 - **Vocabulário e contexto** (em Ajustes): nomes e termos que a transcrição
   deve acertar (vão como dica pro Whisper/Deepgram e pro modelo), correções
   `errado => certo` aplicadas ao texto, e um texto livre sobre você e suas
@@ -130,6 +134,7 @@ Avise os participantes de que a reunião está sendo transcrita (LGPD).
 | `transcricao.py` | Deepgram (nuvem, separa quem fala) |
 | `cerebro.py` / `cerebro_local.py` | Explicações e ata: Claude / Ollama |
 | `vocabulario.py` | Nomes/termos, correções e contexto do usuário |
+| `revisao.py` | Revisão pós-reunião: prompt, esquema da resposta, aplicar correções |
 | `monitor.py` | GPU, CPU, RAM |
 | `db.py` | Banco local |
 | `ui/` | Interface (HTML/CSS/JS) |

@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import monitor
+import revisao
 from audio import listar_dispositivos
 from cerebro_local import listar_modelos
 from db import PASTA_DADOS, Db
@@ -301,6 +302,105 @@ def regerar_ata(rid: int):
     db.atualizar_reuniao(rid, ata=texto)
     db.somar_custo(rid, custo)
     return {"ata": texto}
+
+
+# --- revisão pós-reunião ---------------------------------------------------
+
+
+class Troca(BaseModel):
+    de: str
+    para: str
+
+
+class Aplicar(BaseModel):
+    substituicoes: list[Troca] = []
+    nova_ata: str = ""
+
+
+class Aprender(BaseModel):
+    termos: list[str] = []
+    correcoes: list[Troca] = []
+    contexto: list[str] = []
+
+
+def _cerebro_revisao(cfg: dict):
+    """(cérebro, limite de caracteres da transcrição). Sem aquecer: a revisão
+    usa um contexto maior e o Ollama carregaria o modelo duas vezes."""
+    if cfg["cerebro"] == "local":
+        from cerebro_local import MAX_CHARS_REVISAO, CerebroLocal
+
+        return CerebroLocal(cfg["modelo_local"], cfg.get("local_dispositivo", "gpu")), MAX_CHARS_REVISAO
+    from cerebro import Cerebro
+
+    # Reescrever a ata pede mais cuidado que as explicações ao vivo
+    esforco = "medium" if cfg["esforco"] == "low" else cfg["esforco"]
+    return Cerebro(cfg["modelo_claude"], esforco, cfg.get("anthropic_key") or None), None
+
+
+@app.get("/api/reunioes/{rid}/revisao")
+def ler_revisao(rid: int):
+    return db.listar_revisao(rid)
+
+
+@app.post("/api/reunioes/{rid}/revisao")
+def revisar(rid: int, corpo: Texto):
+    texto = corpo.texto.strip()
+    if not texto:
+        raise HTTPException(400, "Mensagem vazia")
+    cfg = config()
+    if cfg["cerebro"] == "local" and sessao and sessao.ativa():
+        raise HTTPException(409, "Com o modelo local, revise depois de encerrar a reunião em andamento")
+    r = db.obter_reuniao(rid)
+    if not r:
+        raise HTTPException(404, "Reunião não encontrada")
+    cerebro, limite = _cerebro_revisao(cfg)
+    sistema = revisao.material(r, cfg, limite)
+    mensagens = revisao.historico(db.listar_revisao(rid), texto)
+    try:
+        dados, custo = cerebro.revisar(sistema, mensagens, revisao.ESQUEMA)
+    except json.JSONDecodeError:
+        raise HTTPException(502, "A IA respondeu fora do formato esperado; tente reformular")
+    except Exception as e:
+        raise HTTPException(502, f"Não consegui falar com o modelo: {e}")
+    dados = revisao.normalizar(dados, cfg)
+    db.adicionar_revisao(rid, "usuario", texto)
+    db.adicionar_revisao(rid, "ia", dados["resposta"], dados)
+    db.somar_custo(rid, custo)
+    return {**dados, "custo": custo}
+
+
+@app.post("/api/reunioes/{rid}/aplicar")
+def aplicar_revisao(rid: int, corpo: Aplicar):
+    """Aplica as correções propostas na revisão: trocas na transcrição e nas
+    explicações, e a ata reescrita (ou, sem ela, as mesmas trocas na ata)."""
+    r = db.obter_reuniao(rid)
+    if not r:
+        raise HTTPException(404, "Reunião não encontrada")
+    if sessao and sessao.id == rid and sessao.ativa():
+        raise HTTPException(409, "Encerre a reunião antes de corrigi-la")
+    trocar = revisao.trocador([t.model_dump() for t in corpo.substituicoes])
+    textos = db.substituir_textos(rid, trocar)
+    ata = corpo.nova_ata.strip() or (trocar(r["ata"]) if r["ata"] else None)
+    if ata is not None and ata != r["ata"]:
+        db.atualizar_reuniao(rid, ata=ata)
+    return {"textos": textos, "ata": ata is not None and ata != r["ata"]}
+
+
+@app.post("/api/config/aprender")
+def aprender(corpo: Aprender):
+    """Leva sugestões da revisão pros Ajustes (vocabulário, correções, contexto)."""
+    cfg = config()
+    novos = {
+        "vocabulario": revisao.acrescentar_linhas(cfg["vocabulario"], corpo.termos),
+        "correcoes": revisao.acrescentar_linhas(
+            cfg["correcoes"],
+            [f"{t.de} => {t.para}" for t in corpo.correcoes],
+            chave=lambda l: l.split("=>")[0].strip().lower(),
+        ),
+        "contexto": revisao.acrescentar_linhas(cfg["contexto"], corpo.contexto),
+    }
+    db.salvar_config(novos)
+    return ler_config()
 
 
 @app.post("/api/reunioes/{rid}/exportar")

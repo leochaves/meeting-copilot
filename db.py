@@ -41,6 +41,14 @@ create table if not exists explicacoes (
     segundos    real,
     custo       real default 0
 );
+create table if not exists revisoes (
+    id          integer primary key,
+    reuniao_id  integer not null references reunioes(id) on delete cascade,
+    papel       text not null,       -- usuario | ia
+    texto       text not null,
+    dados       text,                -- JSON com as propostas da IA
+    criado      real not null
+);
 create table if not exists config (
     chave  text primary key,
     valor  text not null
@@ -152,6 +160,36 @@ class Db:
             "values (?, ?, ?, ?, ?, ?, ?)",
             (rid, t, tipo, pergunta, texto, segundos, custo),
         )
+
+    # --- revisão pós-reunião ------------------------------------------------
+
+    def listar_revisao(self, rid: int) -> list[dict]:
+        linhas = self._todos(
+            "select id, papel, texto, dados, criado from revisoes where reuniao_id = ? order by id", (rid,)
+        )
+        for l in linhas:
+            l["dados"] = json.loads(l["dados"]) if l["dados"] else None
+        return linhas
+
+    def adicionar_revisao(self, rid: int, papel: str, texto: str, dados: dict | None = None):
+        self._exec(
+            "insert into revisoes (reuniao_id, papel, texto, dados, criado) values (?, ?, ?, ?, ?)",
+            (rid, papel, texto, json.dumps(dados, ensure_ascii=False) if dados else None, time.time()),
+        )
+
+    def substituir_textos(self, rid: int, trocar) -> int:
+        """Aplica `trocar(texto) -> texto` nas falas e explicações da reunião;
+        devolve quantos textos mudaram."""
+        mudou = 0
+        with self._lock:
+            for tabela in ("falas", "explicacoes"):
+                for linha in self._con.execute(f"select id, texto from {tabela} where reuniao_id = ?", (rid,)).fetchall():
+                    novo = trocar(linha["texto"])
+                    if novo != linha["texto"]:
+                        self._con.execute(f"update {tabela} set texto = ? where id = ?", (novo, linha["id"]))
+                        mudou += 1
+            self._con.commit()
+        return mudou
 
     # --- configuração ------------------------------------------------------
 

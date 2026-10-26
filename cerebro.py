@@ -4,6 +4,8 @@ O histórico só cresce (append-only), então o prompt caching reaproveita tudo
 que já foi enviado e cada chamada paga só pelo trecho novo.
 """
 
+import json
+
 import anthropic
 
 SISTEMA = """Você é um copiloto de reuniões ao vivo. Recebe trechos da \
@@ -98,8 +100,11 @@ class Cerebro:
         self.sistema = com_contexto(SISTEMA, contexto)
         self.sistema_ata = com_contexto(SISTEMA_ATA, contexto)
 
-    def _stream(self, ao_escrever, **kwargs):
-        kwargs.update(model=self.modelo, max_tokens=8000, output_config={"effort": self.esforco})
+    def _stream(self, ao_escrever, esquema: dict | None = None, max_tokens: int = 8000, **kwargs):
+        config_saida = {"effort": self.esforco}
+        if esquema:  # saída estruturada: a resposta vem como JSON válido pro esquema
+            config_saida["format"] = {"type": "json_schema", "schema": esquema}
+        kwargs.update(model=self.modelo, max_tokens=max_tokens, output_config=config_saida)
         # Haiku não tem fallback server-side; nos demais, se o classificador
         # recusar, o próprio servidor refaz com o modelo recomendado.
         if "haiku" not in self.modelo:
@@ -133,6 +138,19 @@ class Cerebro:
         # continuar a conversa no mesmo modelo.
         self.mensagens.append({"role": "assistant", "content": final.content})
         return "".join(b.text for b in final.content if b.type == "text"), custo
+
+    def revisar(self, sistema: str, mensagens: list[dict], esquema: dict) -> tuple[dict, float]:
+        """Revisão pós-reunião: devolve (JSON no formato do esquema, custo)."""
+        # max_tokens maior: a resposta pode trazer a ata inteira reescrita
+        final = self._stream(lambda _t: None, esquema=esquema, max_tokens=16000,
+                             system=sistema, messages=mensagens)
+        custo = _custo(self.modelo, final.usage)
+        if final.stop_reason == "refusal":
+            return {"resposta": "[o modelo recusou esse pedido]"}, custo
+        if final.stop_reason == "max_tokens":
+            return {"resposta": "[a resposta ficou grande demais; peça uma correção de cada vez]"}, custo
+        texto = "".join(b.text for b in final.content if b.type == "text")
+        return json.loads(texto), custo
 
     def gerar_ata(self, transcricao: str, _explicacoes: str, ao_escrever) -> tuple[str, float]:
         final = self._stream(

@@ -357,7 +357,7 @@ function fecharDetalhe() {
   $("#reunioes-lista").hidden = false;
 }
 
-async function abrirReuniao(id) {
+async function abrirReuniao(id, abaInicial = null) {
   const r = await tentar(() => api("/api/reunioes/" + id));
   if (!r) return;
   $("#reunioes-lista").hidden = true;
@@ -380,6 +380,7 @@ async function abrirReuniao(id) {
       <button data-aba="ata">Ata</button>
       <button data-aba="copiloto">Copiloto (${r.explicacoes.length})</button>
       <button data-aba="transcricao">Transcrição (${r.falas.length})</button>
+      <button data-aba="revisar" title="Converse com a IA pra corrigir nomes e termos e ensinar o app">💬 Revisar com IA</button>
     </nav>
     <div class="conteudo-aba" id="det-conteudo"></div>`;
 
@@ -392,6 +393,7 @@ async function abrirReuniao(id) {
     transcricao: () => r.falas.length ? r.falas.map((f) => `
       <div class="fala"><time>${mmss(f.t)}</time><span class="quem ${f.quem === "Você" ? "voce" : ""}">${esc(f.quem)}</span><span>${esc(f.texto)}</span></div>`).join("")
       : `<p class="vazio">Nenhuma fala registrada.</p>`,
+    revisar: () => "",  // montada por montarRevisao()
   };
   const textoTranscricao = () => r.falas.map((f) => `[${mmss(f.t)}] ${f.quem}: ${f.texto}`).join("\n");
   const mostrar = (aba) => {
@@ -411,9 +413,10 @@ async function abrirReuniao(id) {
         c.append(rodape);
       });
     }
+    if (aba === "revisar") montarRevisao(conteudo, id);
   };
   $$(".abas button", det).forEach((b) => b.addEventListener("click", () => mostrar(b.dataset.aba)));
-  mostrar(r.ata ? "ata" : r.explicacoes.length ? "copiloto" : "transcricao");
+  mostrar(abaInicial || (r.ata ? "ata" : r.explicacoes.length ? "copiloto" : "transcricao"));
 
   $("#voltar").addEventListener("click", () => { fecharDetalhe(); carregarLista(); });
   $("#det-titulo").addEventListener("change", (e) =>
@@ -444,6 +447,120 @@ async function abrirReuniao(id) {
       carregarLista();
     });
   });
+}
+
+// --- revisão com IA (pós-reunião) ---------------------------------------------------
+
+async function montarRevisao(el, id) {
+  el.classList.add("revisao");
+  el.innerHTML = `
+    <p class="ajuda">Aponte o que saiu errado — nomes, termos, quem falou o quê. A IA propõe as correções
+      e o que vale guardar pras próximas reuniões; <b>nada muda até você clicar em aplicar</b>.</p>
+    <div class="rev-chat"></div>
+    <div class="rev-atalhos">
+      <button type="button" class="btn pequeno" data-msg="Quais nomes, siglas ou termos parecem ter sido transcritos errado nesta reunião?">🔎 O que parece errado?</button>
+      <button type="button" class="btn pequeno" data-msg="O que mais desta reunião vale guardar no contexto pras próximas?">📚 O que levar pro contexto?</button>
+    </div>
+    <form class="pergunta rev-form">
+      <input placeholder="Ex.: “Tulho” é o Túlio Teixeira Cota; quem falou do Kafka foi o André, não eu" autocomplete="off">
+      <button class="btn primario">Enviar</button>
+    </form>`;
+  const chat = $(".rev-chat", el);
+  const campo = $(".rev-form input", el);
+
+  const historico = await tentar(() => api(`/api/reunioes/${id}/revisao`)) || [];
+  if (!historico.length) chat.innerHTML = `<p class="vazio">Nenhuma revisão ainda.</p>`;
+  historico.forEach((m) => adicionarMensagemRevisao(chat, id, m.papel, m.texto, m.dados));
+  chat.scrollTop = chat.scrollHeight;
+
+  const enviar = async (texto) => {
+    if (!texto.trim()) return;
+    $(".vazio", chat)?.remove();
+    adicionarMensagemRevisao(chat, id, "usuario", texto);
+    const pensando = adicionarMensagemRevisao(chat, id, "ia", "");
+    campo.disabled = true;
+    $$("button", el).forEach((b) => (b.disabled = true));
+    const r = await tentar(() => api(`/api/reunioes/${id}/revisao`, { method: "POST", body: { texto } }));
+    pensando.remove();
+    campo.disabled = false;
+    $$(".rev-atalhos button, .rev-form button", el).forEach((b) => (b.disabled = false));
+    if (r) adicionarMensagemRevisao(chat, id, "ia", r.resposta, r);
+    campo.focus();
+  };
+  $(".rev-form", el).addEventListener("submit", (e) => {
+    e.preventDefault();
+    const texto = campo.value;
+    campo.value = "";
+    enviar(texto);
+  });
+  $$(".rev-atalhos button", el).forEach((b) => b.addEventListener("click", () => enviar(b.dataset.msg)));
+}
+
+function adicionarMensagemRevisao(chat, id, papel, texto, dados = null) {
+  const m = document.createElement("div");
+  m.className = "rev-msg " + (papel === "usuario" ? "eu" : "ia");
+  if (papel === "ia" && !texto) {
+    m.innerHTML = `<span class="pensando">analisando a reunião</span>`;
+  } else {
+    m.innerHTML = `<div class="corpo">${esc(texto)}</div>`;
+    if (papel === "ia" && dados) m.append(propostasRevisao(id, dados));
+  }
+  chat.append(m);
+  chat.scrollTop = chat.scrollHeight;
+  return m;
+}
+
+function propostasRevisao(id, d) {
+  const box = document.createElement("div");
+  box.className = "rev-propostas";
+  const subs = d.substituicoes || [];
+  const s = d.sugestoes_contexto || { termos: [], correcoes: [], contexto: [] };
+
+  if (subs.length || d.nova_ata) {
+    const sec = document.createElement("section");
+    sec.innerHTML = `<h4>Corrigir nesta reunião</h4>
+      ${subs.length ? `<ul>${subs.map((t) => `<li><s>${esc(t.de)}</s> → <b>${esc(t.para)}</b></li>`).join("")}</ul>` : ""}
+      ${d.nova_ata ? `<details><summary>Ver a ata reescrita</summary><div class="md">${md(d.nova_ata)}</div></details>` : ""}
+      <button type="button" class="btn primario pequeno">✔ Aplicar nesta reunião</button>`;
+    const b = $("button", sec);
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      const r = await tentar(() => api(`/api/reunioes/${id}/aplicar`, {
+        method: "POST", body: { substituicoes: subs, nova_ata: d.nova_ata || "" },
+      }));
+      if (!r) { b.disabled = false; return; }
+      toast(`Corrigido: ${r.textos} trecho(s) da transcrição${r.ata ? " e a ata" : ""}.`);
+      abrirReuniao(id, "revisar");
+    });
+    box.append(sec);
+  }
+
+  const itens = [
+    ...s.termos.map((t) => ({ tipo: "termos", valor: t, rotulo: `Termo: <b>${esc(t)}</b>`, marcado: true })),
+    ...s.correcoes.map((c) => ({ tipo: "correcoes", valor: c, rotulo: `Correção: ${esc(c.de)} → <b>${esc(c.para)}</b>`, marcado: true })),
+    // Fatos vêm desmarcados: modelos pequenos às vezes "deduzem" coisas erradas
+    ...s.contexto.map((f) => ({ tipo: "contexto", valor: f, rotulo: `Contexto: ${esc(f)}`, marcado: false })),
+  ];
+  if (itens.length) {
+    const sec = document.createElement("section");
+    sec.innerHTML = `<h4>Levar pros Ajustes (próximas reuniões)</h4>
+      ${itens.map((it, i) => `<label class="check"><input type="checkbox" data-i="${i}" ${it.marcado ? "checked" : ""}> <span>${it.rotulo}</span></label>`).join("")}
+      <span class="ajuda">Fatos sobre pessoas e projetos vêm desmarcados — confira antes de marcar.</span>
+      <button type="button" class="btn pequeno">➕ Adicionar aos Ajustes</button>`;
+    const b = $("button", sec);
+    b.addEventListener("click", async () => {
+      const corpo = { termos: [], correcoes: [], contexto: [] };
+      $$("input[type=checkbox]:checked", sec).forEach((c) => { const it = itens[+c.dataset.i]; corpo[it.tipo].push(it.valor); });
+      if (!corpo.termos.length && !corpo.correcoes.length && !corpo.contexto.length) { toast("Marque ao menos um item."); return; }
+      b.disabled = true;
+      const ok = await tentar(() => api("/api/config/aprender", { method: "POST", body: corpo }));
+      if (!ok) { b.disabled = false; return; }
+      b.textContent = "✔ Adicionado";
+      toast("Adicionado aos Ajustes. Vale a partir da próxima reunião.");
+    });
+    box.append(sec);
+  }
+  return box;
 }
 
 // --- recursos ------------------------------------------------------------------
