@@ -94,6 +94,11 @@ class CerebroLocal:
         self.mensagens.append({"role": "assistant", "content": resposta})
         return resposta, 0.0
 
+    def completar(self, sistema: str, mensagens: list[dict]) -> tuple[str, float]:
+        """Resposta em texto livre fora da reunião (perguntas, editar a ata)."""
+        opcoes = {**self.opcoes, "num_ctx": CTX_REVISAO, "temperature": 0.2}
+        return self._chat([{"role": "system", "content": sistema}] + mensagens, lambda _t: None, opcoes), 0.0
+
     def revisar(self, sistema: str, mensagens: list[dict], esquema: dict) -> tuple[dict, float]:
         """Revisão pós-reunião. Fora da reunião o Whisper não está na placa,
         então dá pra usar um contexto maior (a transcrição inteira cabe melhor)."""
@@ -141,13 +146,13 @@ class CerebroLocal:
         ]
         return self._chat(mensagens, ao_escrever), 0.0
 
-    def _chat(self, mensagens: list[dict], ao_escrever) -> str:
+    def _chat(self, mensagens: list[dict], ao_escrever, opcoes: dict | None = None) -> str:
         corpo = {
             "model": self.modelo,
             "messages": mensagens,
             "stream": True,
             "keep_alive": "30m",
-            "options": self.opcoes,
+            "options": opcoes or self.opcoes,
         }
         if self._pensar is not None:
             corpo["think"] = self._pensar

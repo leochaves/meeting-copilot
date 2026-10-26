@@ -354,15 +354,32 @@ def revisar(rid: int, corpo: Texto):
     if not r:
         raise HTTPException(404, "Reunião não encontrada")
     cerebro, limite = _cerebro_revisao(cfg)
-    sistema = revisao.material(r, cfg, limite)
-    mensagens = revisao.historico(db.listar_revisao(rid), texto)
+    anteriores = db.listar_revisao(rid)
+    modo = revisao.intencao(texto)
+    vazio = {"termos": [], "correcoes": [], "contexto": []}
     try:
-        dados, custo = cerebro.revisar(sistema, mensagens, revisao.ESQUEMA)
+        if modo == "pergunta":
+            # Busca os trechos da transcrição com as palavras da pergunta
+            sistema, mensagens = revisao.pedido_pergunta(r, cfg, texto, limite)
+            resposta, custo = cerebro.completar(sistema, mensagens)
+            dados = {"resposta": resposta.strip(), "substituicoes": [], "nova_ata": "", "sugestoes_contexto": vazio}
+        elif modo == "ata":
+            sistema, mensagens = revisao.pedido_editar_ata(r, texto, limite)
+            nova, custo = cerebro.completar(sistema, mensagens)
+            dados = {
+                "resposta": "Reescrevi a ata com o que você pediu. Confira abaixo antes de aplicar.",
+                "substituicoes": [], "nova_ata": revisao.ata_editada(nova), "sugestoes_contexto": vazio,
+            }
+        else:
+            sistema = revisao.material(r, cfg, limite)
+            mensagens = revisao.historico(anteriores, texto)
+            bruto, custo = cerebro.revisar(sistema, mensagens, revisao.ESQUEMA)
+            dados = revisao.normalizar(bruto, cfg, revisao.ja_sugerido(anteriores))
     except json.JSONDecodeError:
         raise HTTPException(502, "A IA respondeu fora do formato esperado; tente reformular")
     except Exception as e:
         raise HTTPException(502, f"Não consegui falar com o modelo: {e}")
-    dados = revisao.normalizar(dados, cfg)
+    dados["modo"] = modo
     db.adicionar_revisao(rid, "usuario", texto)
     db.adicionar_revisao(rid, "ia", dados["resposta"], dados)
     db.somar_custo(rid, custo)

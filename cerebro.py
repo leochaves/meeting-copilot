@@ -139,6 +139,14 @@ class Cerebro:
         self.mensagens.append({"role": "assistant", "content": final.content})
         return "".join(b.text for b in final.content if b.type == "text"), custo
 
+    def completar(self, sistema: str, mensagens: list[dict]) -> tuple[str, float]:
+        """Resposta em texto livre (perguntas sobre a reunião, editar a ata)."""
+        final = self._stream(lambda _t: None, max_tokens=16000, system=sistema, messages=mensagens)
+        custo = _custo(self.modelo, final.usage)
+        if final.stop_reason == "refusal":
+            return "[o modelo recusou esse pedido]", custo
+        return "".join(b.text for b in final.content if b.type == "text"), custo
+
     def revisar(self, sistema: str, mensagens: list[dict], esquema: dict) -> tuple[dict, float]:
         """Revisão pós-reunião: devolve (JSON no formato do esquema, custo)."""
         # max_tokens maior: a resposta pode trazer a ata inteira reescrita

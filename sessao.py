@@ -52,6 +52,8 @@ def gerar_ata(cerebro, reuniao: dict, ao_escrever) -> tuple[str | None, str, flo
     transcricao = "\n".join(f"[{mmss(f['t'])}] {f['quem']}: {f['texto']}" for f in reuniao["falas"])
     explicacoes = "\n\n".join(e["texto"] for e in reuniao["explicacoes"] if e["tipo"] == "explicacao")
     texto, custo = cerebro.gerar_ata(transcricao, explicacoes, ao_escrever)
+    # Alguns modelos cercam a resposta com ```markdown ... ```
+    texto = re.sub(r"^\s*```[\w-]*\s*\n|\n\s*```\s*$", "", texto.strip())
     sugerido = None
     linhas = texto.strip().splitlines()
     if linhas and linhas[0].lower().startswith("título:"):  # 1ª linha "Título: ..."

@@ -19,6 +19,7 @@ function md(texto) {
   let lista = false;
   for (const linha of String(texto || "").split("\n")) {
     const l = linha.trim();
+    if (l.startsWith("```")) continue;  // atas antigas guardadas com ```markdown em volta
     const item = l.match(/^[-*•]\s+(.*)/) || l.match(/^\d+[.)]\s+(.*)/);
     if (item) {
       if (!lista) { html.push("<ul>"); lista = true; }
